@@ -3,40 +3,47 @@ from flask_cors import CORS
 from faster_whisper import WhisperModel
 import os
 import torch
+import logging
 
 app = Flask(__name__)
-CORS(app)  # This will enable CORS for all routes
+CORS(app)
 
-# Ensure the temp directory exists
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+
 if not os.path.exists("temp"):
     os.makedirs("temp")
 
-# Set Hugging Face cache directory to use the current directory
 os.environ["HUGGINGFACE_HUB_CACHE"] = os.path.join(os.getcwd(), "model_cache")
 os.environ['HF_HOME'] = os.path.join(os.getcwd(), 'hf_cache')
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # Avoid OpenMP errors
 
-# Load the Whisper model (choose the size based on available resources)
-model = WhisperModel("large-v2", device="cuda" if torch.cuda.is_available() else "cpu", compute_type="float16")
+try:
+    model = WhisperModel("large-v2", device="cuda" if torch.cuda.is_available() else "cpu", compute_type="float16")
+    logging.info("Model loaded successfully.")
+except Exception as e:
+    logging.error(f"Failed to load model: {e}")
+    exit(1)  # Exit if model loading fails
 
 @app.route('/transcribe/', methods=['POST'])
 def transcribe_audio():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-    
-    # Save the uploaded audio file in the current directory's temp folder
-    audio_path = os.path.join("temp", file.filename)
-    file.save(audio_path)
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        
+        audio_path = os.path.join("temp", file.filename)
+        file.save(audio_path)
 
-    # Transcribe the audio
-    segments, info = model.transcribe(audio_path)
-    
-    # Collect the transcription
-    transcription = " ".join(segment.text for segment in segments)
+        segments, info = model.transcribe(audio_path)
+        transcription = " ".join(segment.text for segment in segments)
 
-    return jsonify({"transcription": transcription})
+        return jsonify({"transcription": transcription})
+    except Exception as e:
+        logging.error(f"Error during transcription: {e}")
+        return jsonify({"error": "Transcription failed"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8980, debug=True)
