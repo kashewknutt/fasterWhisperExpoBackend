@@ -38,7 +38,9 @@ def transcribe_audio():
         file.save(audio_path)
 
         segments, info = model.transcribe(audio_path)
+        print(f"Segments: {segments}")
         transcription = " ".join(segment.text for segment in segments)
+        print(transcription)
 
         return jsonify({"transcription": transcription})
     except Exception as e:
